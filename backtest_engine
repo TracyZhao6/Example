@@ -1,0 +1,31 @@
+import numpy as np
+import pandas as pd
+
+def backtest_strategy(price_series, signal, transaction_cost=0.0015):
+    """
+    执行基于信号的简单回测（允许做多做空）
+    参数：
+        price_series: pd.Series，收盘价序列
+        signal: pd.Series，交易信号（1: 做多, -1: 做空, 0: 空仓）
+        transaction_cost: float，每次交易的成本百分比（例如 0.0015 = 0.15%）
+    返回：
+        result: pd.DataFrame，包含每日收益、净值等信息
+    """
+    signal = signal.shift(1).fillna(0)  # 避免未来函数
+    returns = price_series.pct_change().fillna(0)
+    strategy_returns = signal * returns
+
+    # 计算换仓：信号变化时视为交易发生
+    trades = signal.diff().abs()
+    costs = trades * transaction_cost
+
+    net_returns = strategy_returns - costs
+    cumulative_returns = (1 + net_returns).cumprod()
+
+    result = pd.DataFrame({
+        'price': price_series,
+        'signal': signal,
+        'daily_return': net_returns,
+        'cumulative_return': cumulative_returns
+    })
+    return result
