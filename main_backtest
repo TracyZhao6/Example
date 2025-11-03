@@ -1,0 +1,69 @@
+import pandas as pd
+from dataprocess import rawreturns
+from strategies import (
+    strategy_bh, strategy_double_ma, strategy_macd,
+    strategy_rsi
+)
+#, strategy_forecast
+from backtest_engine import backtest_strategy
+from metrics import evaluate_performance
+from plot_utils import plot_cumulative_returns
+
+# === 参数设置 ===
+ticker = "上证指数行情序列"        # 文件名不带 .xlsx 后缀
+dataloc = "data/filtered_data/"                   # 数据所在文件夹
+#transaction_cost = 0.0015        # 交易成本（0.15%）
+transaction_cost = 0
+forecast_file = "forecast.csv"   # 预测模型输出（CSV，包含'predicted_return'列）
+plot_output = "cumulative_returns.png"
+
+# === 1. 加载数据 ===
+price_df = pd.read_excel(f"{dataloc}{ticker}.xlsx")
+price_df['date'] = pd.to_datetime(price_df['date'])
+price_df.set_index('date', inplace=True)
+price_series = price_df['AdjClose']
+
+# === 2. 加载预测结果（若有） ===
+try:
+    forecast_df = pd.read_csv(forecast_file)
+    forecast_df['date'] = pd.to_datetime(forecast_df['date'])
+    forecast_df.set_index('date', inplace=True)
+    forecast_series = forecast_df['predicted_return'].reindex(price_series.index).fillna(0)
+except:
+    forecast_series = pd.Series(0, index=price_series.index)
+
+# === 3. 生成交易信号 ===
+signals = {
+    "B&H": strategy_bh(price_series),
+    "Double MA": strategy_double_ma(price_series),
+    "MACD": strategy_macd(price_series),
+    "RSI": strategy_rsi(price_series)
+
+}
+#"Forecast": strategy_forecast(forecast_series)
+
+# === 4. 执行回测 ===
+results = {}
+for name, signal in signals.items():
+    result_df = backtest_strategy(price_series, signal, transaction_cost=transaction_cost)
+    results[name] = result_df
+
+# === 5. 计算绩效指标 ===
+print("\n=== 策略绩效评估表 ===")
+benchmark = results['B&H']
+performance_table = {}
+for name, df in results.items():
+    metrics = evaluate_performance(df, benchmark_df=benchmark)
+    performance_table[name] = metrics
+
+performance_df = pd.DataFrame(performance_table).T
+pd.options.display.float_format = "{:,.2%}".format
+print(performance_df)
+
+# === 6. 绘制累计收益图 ===
+plot_cumulative_returns(results, title="策略累计收益比较", save_path=plot_output)
+
+# === 7. 保存绩效评估表 ===
+performance_excel_path = "performance_summary.xlsx"
+performance_df.to_excel(performance_excel_path)
+print(f"\n绩效评估表已保存到：{performance_excel_path}")
